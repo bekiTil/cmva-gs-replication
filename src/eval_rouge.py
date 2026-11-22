@@ -61,14 +61,21 @@ def main():
     agg_dir = "models/aggregator"
     if os.path.isdir(agg_dir):
         profile = PROFILES[args.profile]
-        agents = {v: load_agent(args.base_model, v, tok, device) for v in VALUES}
+        # candidates one agent at a time (5 full 1.1B models do not fit on a T4)
+        cand_by_value = {}
+        for v in VALUES:
+            agent = load_agent(args.base_model, v, tok, device)
+            cand_by_value[v] = [gen_text(agent, tok, build_prompt(p["situation"]), device, 24) for p in pairs]
+            del agent
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         from peft import PeftModel
         agg_base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
         agg = PeftModel.from_pretrained(agg_base, agg_dir).to(device)
         agg.eval()
         cmva_preds = []
-        for p in pairs:
-            cands = [gen_text(agents[v], tok, build_prompt(p["situation"]), device, 24) for v in VALUES]
+        for i, p in enumerate(pairs):
+            cands = [cand_by_value[v][i] for v in VALUES]
             inp = build_agg_input(p["situation"], profile, cands)
             cmva_preds.append(gen_text(agg, tok, inp, device))
         results["CMVA-GS"] = rouge_eval(cmva_preds, refs)

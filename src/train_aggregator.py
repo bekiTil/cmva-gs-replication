@@ -68,16 +68,22 @@ def main():
     # --- Build aggregator dataset by running the 5 agents ---
     pairs = [json.loads(l) for l in open("data/prepared/pairs/train.jsonl")][: args.n_train]
     print(f"Generating candidate answers from 5 agents for {len(pairs)} situations ...")
-    agents = {v: load_agent(args.base_model, v, tok, device) for v in VALUES}
+    # One agent in GPU memory at a time (5 full 1.1B models do not fit on a T4).
+    cand_by_value = {}
+    for v in VALUES:
+        agent = load_agent(args.base_model, v, tok, device)
+        cand_by_value[v] = [gen(agent, tok, p["situation"], device) for p in pairs]
+        del agent
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print(f"  candidates done: {v}")
     examples = []
     for i, p in enumerate(pairs):
-        cands = [gen(agents[v], tok, p["situation"], device) for v in VALUES]
+        cands = [cand_by_value[v][i] for v in VALUES]
         inp = build_agg_input(p["situation"], profile, cands)
         examples.append({"text": inp + " " + p["target"] + tok.eos_token,
                          "prompt_len_text": inp})
-        if (i + 1) % 50 == 0:
-            print(f"  {i+1}/{len(pairs)}")
-    del agents
+    os.makedirs("results", exist_ok=True)
     json.dump(examples[:3], open("results/agg_samples.json", "w"), indent=2)
 
     # --- SFT with LoRA, masking the prompt tokens ---
