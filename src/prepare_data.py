@@ -108,6 +108,19 @@ def build(df, seed=42):
                 f.write(json.dumps({"situation": str(r[sit_col]).strip()}) + "\n")
         print(f"[prompts] {split}={len(rows)}")
 
+    # ---- Situation -> guidance pairs (aggregator targets + ROUGE refs) ----
+    rot_col = "rot" if "rot" in df.columns else text_col
+    os.makedirs(os.path.join(OUT_DIR, "pairs"), exist_ok=True)
+    pairs = df.dropna(subset=[sit_col, rot_col]).drop_duplicates(sit_col)
+    for split in ("train", "val", "test"):
+        rows = pairs[pairs["_split"] == split]
+        out = os.path.join(OUT_DIR, "pairs", f"{split}.jsonl")
+        with open(out, "w") as f:
+            for _, r in rows.iterrows():
+                f.write(json.dumps({"situation": str(r[sit_col]).strip(),
+                                    "target": str(r[rot_col]).strip()}) + "\n")
+        print(f"[pairs] {split}={len(rows)}")
+
     with open(os.path.join(OUT_DIR, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
     print("Done. Wrote", OUT_DIR)
