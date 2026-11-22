@@ -74,7 +74,7 @@ def main():
     for v in VALUES:
         agent = load_agent(args.base_model, v, tok, device)
         cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
-                                           max_new_tokens=28, bs=16)
+                                           max_new_tokens=28, bs=32)
         del agent
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

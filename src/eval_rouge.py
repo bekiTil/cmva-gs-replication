@@ -54,7 +54,7 @@ def main():
     base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
     base.eval()
     pt_preds = generate_batch(base, tok, [build_prompt(p["situation"]) for p in pairs],
-                              device, max_new_tokens=32, bs=16, do_sample=False)
+                              device, max_new_tokens=32, bs=32, do_sample=False)
     results["PT-model"] = rouge_eval(pt_preds, refs)
     del base
 
@@ -68,7 +68,7 @@ def main():
         for v in VALUES:
             agent = load_agent(args.base_model, v, tok, device)
             cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
-                                              max_new_tokens=24, bs=16, do_sample=False)
+                                              max_new_tokens=24, bs=32, do_sample=False)
             del agent
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -80,7 +80,7 @@ def main():
                                       [cand_by_value[v][i] for v in VALUES])
                       for i, p in enumerate(pairs)]
         cmva_preds = generate_batch(agg, tok, agg_inputs, device,
-                                    max_new_tokens=32, bs=16, do_sample=False)
+                                    max_new_tokens=32, bs=32, do_sample=False)
         results["CMVA-GS"] = rouge_eval(cmva_preds, refs)
     else:
         print("aggregator not found; skipping CMVA-GS row")
