@@ -39,6 +39,8 @@ def main():
     ap.add_argument("--base_model", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
     ap.add_argument("--n", type=int, default=150)
     ap.add_argument("--profile", default="balanced")
+    ap.add_argument("--gen_tokens", type=int, default=32,
+                    help="max_new_tokens for the PT and CMVA-GS final outputs")
     args = ap.parse_args()
 
     device = get_device()
@@ -54,7 +56,7 @@ def main():
     base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
     base.eval()
     pt_preds = generate_batch(base, tok, [build_prompt(p["situation"]) for p in pairs],
-                              device, max_new_tokens=32, bs=32, do_sample=False)
+                              device, max_new_tokens=args.gen_tokens, bs=32, do_sample=False)
     results["PT-model"] = rouge_eval(pt_preds, refs)
     del base
 
@@ -80,7 +82,7 @@ def main():
                                       [cand_by_value[v][i] for v in VALUES])
                       for i, p in enumerate(pairs)]
         cmva_preds = generate_batch(agg, tok, agg_inputs, device,
-                                    max_new_tokens=32, bs=32, do_sample=False)
+                                    max_new_tokens=args.gen_tokens, bs=32, do_sample=False)
         results["CMVA-GS"] = rouge_eval(cmva_preds, refs)
     else:
         print("aggregator not found; skipping CMVA-GS row")
