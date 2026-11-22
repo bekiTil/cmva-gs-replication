@@ -15,7 +15,7 @@ import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
-                          DataCollatorForLanguageModeling, Trainer,
+                          DataCollatorForSeq2Seq, Trainer,
                           TrainingArguments)
 
 from common import VALUES, build_prompt, get_device
@@ -110,7 +110,8 @@ def main():
         per_device_train_batch_size=2, gradient_accumulation_steps=4,
         learning_rate=2e-4, logging_steps=20, save_strategy="no", report_to=[],
     )
-    collator = DataCollatorForLanguageModeling(tok, mlm=False)
+    collator = DataCollatorForSeq2Seq(tok, model=model, label_pad_token_id=-100,
+                                      padding=True)
     trainer = Trainer(model=model, args=targs, train_dataset=ds, data_collator=collator)
     trainer.train()
     os.makedirs(args.out, exist_ok=True)
