@@ -52,6 +52,35 @@ class RewardScorer:
         return out
 
 
+@torch.no_grad()
+def generate_batch(model, tok, prompts, device, max_new_tokens=32, bs=16,
+                   do_sample=True):
+    """Batched text generation; returns the first line of each continuation."""
+    old_side = tok.padding_side
+    tok.padding_side = "left"
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    model.eval()
+    outs = []
+    kw = dict(max_new_tokens=max_new_tokens, pad_token_id=tok.pad_token_id)
+    if do_sample:
+        kw.update(do_sample=True, top_p=0.9, temperature=0.8)
+    else:
+        kw.update(do_sample=False)
+    for i in range(0, len(prompts), bs):
+        batch = prompts[i : i + bs]
+        enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
+                  max_length=160).to(device)
+        gen = model.generate(**enc, **kw)
+        plen = enc["input_ids"].shape[1]
+        for j in range(len(batch)):
+            text = tok.decode(gen[j][plen:], skip_special_tokens=True)
+            text = text.split("\n")[0].strip()
+            outs.append(text if text else "(empty)")
+    tok.padding_side = old_side
+    return outs
+
+
 def load_prompts(split="test", limit=None):
     path = f"data/prepared/prompts/{split}.jsonl"
     rows = []

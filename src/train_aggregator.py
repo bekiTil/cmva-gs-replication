@@ -18,7 +18,7 @@ from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           DataCollatorForSeq2Seq, Trainer,
                           TrainingArguments)
 
-from common import VALUES, build_prompt, get_device
+from common import VALUES, build_prompt, generate_batch, get_device
 
 
 def load_agent(base_model, value, tok, device):
@@ -70,9 +70,11 @@ def main():
     print(f"Generating candidate answers from 5 agents for {len(pairs)} situations ...")
     # One agent in GPU memory at a time (5 full 1.1B models do not fit on a T4).
     cand_by_value = {}
+    agent_prompts = [build_prompt(p["situation"]) for p in pairs]
     for v in VALUES:
         agent = load_agent(args.base_model, v, tok, device)
-        cand_by_value[v] = [gen(agent, tok, p["situation"], device) for p in pairs]
+        cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
+                                           max_new_tokens=28, bs=16)
         del agent
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

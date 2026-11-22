@@ -10,7 +10,7 @@ import os
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from common import VALUES, PROFILES, build_prompt, get_device
+from common import VALUES, PROFILES, build_prompt, generate_batch, get_device
 from train_aggregator import build_agg_input, load_agent
 
 
@@ -53,7 +53,8 @@ def main():
     # --- PT-model baseline ---
     base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
     base.eval()
-    pt_preds = [gen_text(base, tok, build_prompt(p["situation"]), device) for p in pairs]
+    pt_preds = generate_batch(base, tok, [build_prompt(p["situation"]) for p in pairs],
+                              device, max_new_tokens=32, bs=16, do_sample=False)
     results["PT-model"] = rouge_eval(pt_preds, refs)
     del base
 
@@ -62,10 +63,12 @@ def main():
     if os.path.isdir(agg_dir):
         profile = PROFILES[args.profile]
         # candidates one agent at a time (5 full 1.1B models do not fit on a T4)
+        agent_prompts = [build_prompt(p["situation"]) for p in pairs]
         cand_by_value = {}
         for v in VALUES:
             agent = load_agent(args.base_model, v, tok, device)
-            cand_by_value[v] = [gen_text(agent, tok, build_prompt(p["situation"]), device, 24) for p in pairs]
+            cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
+                                              max_new_tokens=24, bs=16, do_sample=False)
             del agent
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -73,11 +76,11 @@ def main():
         agg_base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
         agg = PeftModel.from_pretrained(agg_base, agg_dir).to(device)
         agg.eval()
-        cmva_preds = []
-        for i, p in enumerate(pairs):
-            cands = [cand_by_value[v][i] for v in VALUES]
-            inp = build_agg_input(p["situation"], profile, cands)
-            cmva_preds.append(gen_text(agg, tok, inp, device))
+        agg_inputs = [build_agg_input(p["situation"], profile,
+                                      [cand_by_value[v][i] for v in VALUES])
+                      for i, p in enumerate(pairs)]
+        cmva_preds = generate_batch(agg, tok, agg_inputs, device,
+                                    max_new_tokens=32, bs=16, do_sample=False)
         results["CMVA-GS"] = rouge_eval(cmva_preds, refs)
     else:
         print("aggregator not found; skipping CMVA-GS row")
