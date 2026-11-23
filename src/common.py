@@ -54,8 +54,10 @@ class RewardScorer:
 
 @torch.no_grad()
 def generate_batch(model, tok, prompts, device, max_new_tokens=32, bs=16,
-                   do_sample=True):
-    """Batched text generation; returns the first line of each continuation."""
+                   do_sample=True, first_line=True, max_len=160):
+    """Batched text generation. first_line=True returns the first line of each
+    continuation; first_line=False returns the full continuation (for CoT, where
+    the caller parses out the answer after an 'Aggregated answer:' marker)."""
     old_side = tok.padding_side
     tok.padding_side = "left"
     if tok.pad_token is None:
@@ -70,15 +72,26 @@ def generate_batch(model, tok, prompts, device, max_new_tokens=32, bs=16,
     for i in range(0, len(prompts), bs):
         batch = prompts[i : i + bs]
         enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
-                  max_length=160).to(device)
+                  max_length=max_len).to(device)
         gen = model.generate(**enc, **kw)
         plen = enc["input_ids"].shape[1]
         for j in range(len(batch)):
             text = tok.decode(gen[j][plen:], skip_special_tokens=True)
-            text = text.split("\n")[0].strip()
+            if first_line:
+                text = text.split("\n")[0].strip()
+            else:
+                text = text.strip()
             outs.append(text if text else "(empty)")
     tok.padding_side = old_side
     return outs
+
+
+def extract_cot_answer(text):
+    """From a CoT generation 'Reasoning: ... Aggregated answer: X', return X."""
+    marker = "Aggregated answer:"
+    if marker in text:
+        text = text.split(marker, 1)[1]
+    return text.split("\n")[0].strip() or "(empty)"
 
 
 def load_prompts(split="test", limit=None):

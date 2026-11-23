@@ -41,6 +41,11 @@ def main():
     ap.add_argument("--profile", default="balanced")
     ap.add_argument("--gen_tokens", type=int, default=32,
                     help="max_new_tokens for the PT and CMVA-GS final outputs")
+    ap.add_argument("--agg_dir", default="models/aggregator",
+                    help="aggregator LoRA dir (use models/aggregator_cot for CoT)")
+    ap.add_argument("--cot", action="store_true",
+                    help="CoT aggregator: reason-then-answer; parse final answer")
+    ap.add_argument("--label", default="CMVA-GS", help="row name in the table")
     args = ap.parse_args()
 
     device = get_device()
@@ -60,11 +65,11 @@ def main():
     results["PT-model"] = rouge_eval(pt_preds, refs)
     del base
 
-    # --- CMVA-GS: 5 agents -> aggregator ---
-    agg_dir = "models/aggregator"
+    # --- CMVA-GS (plain or CoT): 5 agents -> aggregator ---
+    agg_dir = args.agg_dir
     if os.path.isdir(agg_dir):
+        from common import extract_cot_answer
         profile = PROFILES[args.profile]
-        # candidates one agent at a time (5 full 1.1B models do not fit on a T4)
         agent_prompts = [build_prompt(p["situation"]) for p in pairs]
         cand_by_value = {}
         for v in VALUES:
@@ -78,12 +83,21 @@ def main():
         agg_base = AutoModelForCausalLM.from_pretrained(args.base_model, torch_dtype=torch.float32).to(device)
         agg = PeftModel.from_pretrained(agg_base, agg_dir).to(device)
         agg.eval()
-        agg_inputs = [build_agg_input(p["situation"], profile,
-                                      [cand_by_value[v][i] for v in VALUES])
-                      for i, p in enumerate(pairs)]
-        cmva_preds = generate_batch(agg, tok, agg_inputs, device,
-                                    max_new_tokens=args.gen_tokens, bs=32, do_sample=False)
-        results["CMVA-GS"] = rouge_eval(cmva_preds, refs)
+        if args.cot:
+            from train_aggregator_cot import build_agg_input_cot
+            agg_inputs = [build_agg_input_cot(p["situation"], profile,
+                                              [cand_by_value[v][i] for v in VALUES])
+                          for i, p in enumerate(pairs)]
+            raw = generate_batch(agg, tok, agg_inputs, device, max_new_tokens=96,
+                                 bs=16, do_sample=False, first_line=False, max_len=320)
+            cmva_preds = [extract_cot_answer(t) for t in raw]
+        else:
+            agg_inputs = [build_agg_input(p["situation"], profile,
+                                          [cand_by_value[v][i] for v in VALUES])
+                          for i, p in enumerate(pairs)]
+            cmva_preds = generate_batch(agg, tok, agg_inputs, device,
+                                        max_new_tokens=args.gen_tokens, bs=32, do_sample=False)
+        results[args.label] = rouge_eval(cmva_preds, refs)
     else:
         print("aggregator not found; skipping CMVA-GS row")
 
