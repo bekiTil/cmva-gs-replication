@@ -2,6 +2,19 @@
 
 Builds directly on the reproduced CMVA-GS baseline (see `RESULTS.md`).
 
+## 0. Refined design choices (v2)
+
+- **Base model → `Qwen2.5-1.5B-Instruct`** (was TinyLlama-1.1B). CoT lives or dies
+  on reasoning quality, and TinyLlama is a weak reasoner; Qwen2.5-1.5B is a strong
+  small reasoner, Apache-2.0, non-gated, and fits an L4/T4. The CoT study is its
+  own head-to-head — **CoT vs no-CoT, both on Qwen** — so it isolates the CoT
+  effect and does *not* require redoing the TinyLlama baseline.
+- **Rationale source → hybrid:** templated-from-SocialChem backbone **+**
+  self-distilled traces (Qwen zero-shot CoT, keep traces whose answer best matches
+  the RoT). Templated vs distilled is the key ablation. No external API needed.
+- **Scope → one clean headline + 3 ablations** (see §5), to fit the timeline.
+  Aggregator is the primary CoT site; agent-level CoT is an ablation, not the main.
+
 ## 1. Research question & hypothesis
 
 **Slide G13:** *"Force the model to reason about the consequences before labeling
@@ -55,9 +68,12 @@ rationales**, so CoT targets are fully reproducible from the dataset itself:
 - extra attributes (`rot-char-targeting`, `action-agency`, …) → consequence/party
 
 Build `Reasoning: <templated consequence sentence> → Aggregated answer: <rot>`.
-**Optional stronger variant:** distill free-form rationales from a larger LLM
-(GPT-4 / a bigger open model) and SFT on those — list as an extension if API is
-available.
+
+**Hybrid (chosen):** also **self-distill** rationales — have the Qwen base generate
+zero-shot CoT for each training situation, keep only traces whose final answer is
+closest to the ground-truth RoT (by ROUGE/conformance), and SFT on those. This
+teaches genuine reasoning rather than a fixed template, needs **no external API**,
+and gives a clean **templated-vs-distilled ablation**.
 
 ## 4. Method / training
 
@@ -80,8 +96,17 @@ then the 10K setting that already wins all ROUGE metrics):
    answer follow the stated reasoning?
 5. **Error analysis (30% of the grade):** curated cases where CoT helps, hurts,
    or reasons plausibly-but-wrongly (hallucinated consequences).
-6. **Ablations:** prompt-only CoT (no training) vs trained CoT; reasoning length;
-   CoT in aggregator vs agents vs classifier; self-consistency k.
+**Headline comparison (the one result for the report):** CoT-CA vs plain-CA, both
+on Qwen2.5-1.5B, same aggregator data scale → ROUGE + conformance.
+
+**Three focused ablations (trimmed to fit the timeline):**
+- **A1 — rationale source:** templated vs self-distilled CoT.
+- **A2 — subset:** single-value vs multi-value situations (does CoT help more when
+  values conflict?).
+- **A3 — training:** trained CoT (SFT) vs prompt-only CoT (no training).
+
+(Further ideas — agent-level CoT, self-consistency, reasoning length — are
+stretch, only if time permits.)
 
 ## 6. Timeline (course weeks)
 
@@ -92,8 +117,8 @@ then the 10K setting that already wins all ROUGE metrics):
 
 ## 7. Risks & mitigations
 
-- **TinyLlama is a weak reasoner** → trained/distilled CoT ≫ zero-shot CoT; try a
-  slightly larger base (e.g. Qwen2.5-1.5B) if the L4 allows.
+- **Weak reasoner** → addressed by adopting **Qwen2.5-1.5B-Instruct** as the base
+  (v2); trained/distilled CoT further ≫ zero-shot CoT.
 - **CoT tokens can dilute ROUGE precision** → always score the *final answer only*,
   and report reasoning-quality metrics separately.
 - **Templated rationales may be formulaic** → optionally mix in LLM-distilled
