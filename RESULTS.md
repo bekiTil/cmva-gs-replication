@@ -59,21 +59,26 @@ Effect of **aggregator training-set size** (the paper used 91K examples):
 
 **Trend table** (CMVA-GS vs PT, same 120-item test set):
 
-| Aggregator config        | train loss | wins over PT |
-|--------------------------|-----------:|--------------|
-| 60 examples  × 3 ep      | 1.69 | none |
-| 800 examples × 4 ep      | 1.29 | ROUGE-2 |
-| 2000 examples × 2 ep     | 1.29 | **ROUGE-2, ROUGE-L, ROUGE-Lsum** (3 of 4) |
-| 4000 examples × 1 ep     | 1.43 | none (regression) |
+CMVA-GS rouge scores vs PT (16.83 / 3.09 / 13.36 / 13.36), same 120-item test:
 
-**Key finding: epochs matter more than raw data size.** The 4000×1 run uses the
-*same* number of gradient steps (500) as 2000×2, but sees each example only once,
-so it under-fits (loss 1.43 vs 1.29) and ROUGE *drops below* the 2000 run on every
-metric. The aggregator needs **repetition** to tightly match the rule-of-thumb
-style that ROUGE rewards. **Best config so far: 2000 examples × 2 epochs** — more
-*training* (epochs), not just more unique data, is the lever. ROUGE-1 remains the
-hardest metric for an aggregation model and is the last to flip; the paper's full
-win used 91K examples with correspondingly more training.
+| Aggregator config        | R1 | R2 | RL | wins over PT |
+|--------------------------|---:|---:|---:|--------------|
+| 60 examples  × 3 ep      | 10.95 | 0.70 | 9.76 | none (underfit) |
+| 800 examples × 4 ep      | 14.25 | 3.22 | 12.77 | ROUGE-2 |
+| **2000 examples × 2 ep** | **15.14** | **3.82** | **13.62** | **ROUGE-2, ROUGE-L, ROUGE-Lsum (3/4)** |
+| 4000 examples × 1 ep     | 13.87 | 3.06 | 12.68 | none (underfit) |
+| 2000 examples × 5 ep     | 14.42 | 2.41 | 12.61 | none (**overfit**) |
+
+**Key finding: there is a training sweet spot (classic bias–variance curve).**
+- **Too little training** (4000×1, or 60 examples) → *under*-fits → ROUGE below PT.
+- **Too much training** (2000×5) → *over*-fits the 2000 train RoTs → generalizes
+  worse to the held-out test set → ROUGE drops below *both* the 2000×2 run and PT.
+- **Just right (2000 × 2 epochs)** → beats PT on 3 of 4 metrics, including ROUGE-L.
+
+So the lever is neither raw data size alone nor epochs alone, but the *balance*:
+the best scaled result is **2000 examples × 2 epochs**. ROUGE-1 is the hardest
+metric for an aggregation model and did not flip at this scale; the paper's full
+win used **91K** examples (far more data → more epochs possible without overfit).
 
 ## Honest interpretation (for the report)
 
@@ -87,13 +92,13 @@ weaker than the paper's**, for two understandable reasons:
    because OpenAssistant-12B started far less aligned (74–91%). With only 15 PPO
    steps and rising KL, the agents move only a point or two, sometimes down.
 
-2. **Aggregator training (Figure 2).** The Contextual Aggregator needs enough
-   *training* to synthesize the 5 candidates. At 60 examples it loses to PT on
-   ROUGE; at **2000 examples × 2 epochs** it beats PT on ROUGE-2, ROUGE-L and
-   ROUGE-Lsum (3 of 4), trailing only on ROUGE-1. Note 4000 examples × 1 epoch
-   *regressed* (same gradient steps, under-fit) — so the lever is epochs/training,
-   not raw data size. The paper's full win used **91K** examples with much more
-   training; the trend points toward a full sweep with more epochs on more data.
+2. **Aggregator training (Figure 2).** The Contextual Aggregator has a training
+   *sweet spot*. Too little (4000×1 under-fits) or too much (2000×5 over-fits)
+   both lose to PT; **2000 examples × 2 epochs** is best and beats PT on 3 of 4
+   metrics (ROUGE-2/L/Lsum), trailing only on ROUGE-1. So the lever is the
+   data/epoch *balance*, not either alone. The paper's full win used **91K**
+   examples — far more data allows more training without overfitting, which is
+   what would be needed to also flip ROUGE-1.
 
 **Takeaways to scale up:** more PPO steps per agent, a less-aligned/larger base
 to create headroom, and a much larger aggregator training set. These are the
