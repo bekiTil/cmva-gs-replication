@@ -50,8 +50,9 @@ cp -ru models/agents "$DRIVE/agents"
 
 echo "===== [4/8] cache 10K candidates (incremental, straight onto Drive) ====="
 # Per-agent files land in $DRIVE/candidates, so partial progress survives a VM reset.
-python3 src/gen_candidates.py --n_train 10000 --out "$DRIVE/candidates/train10k.jsonl"
+# A complete train10k.jsonl (e.g. snapshotted from an earlier run) short-circuits it.
 CAND="$DRIVE/candidates/train10k.jsonl"
+[ -f "$CAND" ] || python3 src/gen_candidates.py --n_train 10000 --out "$CAND"
 
 echo "===== [5/8] train PLAIN aggregator (baseline, 10K x2) ====="
 [ -f models/aggregator/adapter_model.safetensors ] || python3 src/train_aggregator.py --candidates "$CAND" --n_train 10000 --epochs 2
