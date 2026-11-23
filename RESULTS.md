@@ -93,6 +93,44 @@ So the lever is the data/epoch *balance*: more unique data lets you train longer
 without overfitting, and at 10K that is enough to beat the base model on every
 ROUGE metric — the same effect the paper gets at **91K** examples.
 
+## Research extension (G13) — Chain-of-Thought Contextual Aggregator
+
+For the CoT study the base model was switched to **Qwen2.5-1.5B-Instruct** (a
+stronger, instruction-tuned backbone than TinyLlama), and the whole pipeline was
+re-run from scratch on it: 5 DistilBERT reward models → 5 Qwen PPO+LoRA Moral
+Agents → aggregator. The CoT reasoning traces are built by `build_cot_data.py`
+from Social Chemistry's structured annotations (moral foundation + action +
+judgment → a short "reason about the consequences, then answer" trace).
+
+**Head-to-head: plain aggregator (control) vs CoT aggregator (treatment).** Both
+share the *same* base, the *same* 5 agents' candidate answers, the *same* 2000
+training situations and the *same* 2 epochs — the **only** difference is whether
+the aggregator is trained to answer directly or to emit a consequence-reasoning
+trace before `Aggregated answer:`. ROUGE is scored on the final answer only
+(parsed after the marker), so the comparison is apples-to-apples. Test n=150.
+
+| System | ROUGE-1 | ROUGE-2 | ROUGE-L | ROUGE-Lsum |
+|--------|--------:|--------:|--------:|-----------:|
+| PT (base Qwen2.5-1.5B) | 15.18 | 3.18 | 13.60 | 13.60 |
+| CMVA-GS (plain aggregator) | 14.09 | 3.05 | 12.58 | 12.58 |
+| **CoT-CA (reason-then-answer)** | **26.76** | **10.39** | **25.13** | **25.13** |
+| Δ CoT-CA vs PT | **+11.58** | **+7.21** | **+11.53** | **+11.53** |
+| Δ CoT-CA vs plain | **+12.67** | **+7.34** | **+12.55** | **+12.55** |
+
+**Headline: Chain-of-Thought roughly doubles ROUGE and makes the aggregator far
+more sample-efficient.** At the identical 2000×2 budget where the *plain*
+aggregator still trails the base model (14.09 vs 15.18 on ROUGE-1 — consistent
+with the earlier finding that the plain aggregator needs ~10K examples to beat
+the base), the *CoT* aggregator beats the base on **all four** metrics by a wide
+margin and beats the plain control on all four. Reasoning before answering is
+doing real work here, which is exactly the G13 hypothesis.
+
+*Caveats to probe in the ablations (COT_PLAN.md, Phase 3):* part of the gain may
+come from the CoT target's consistent format and the extra structure teaching the
+model a more RoT-like answer style, not purely from "reasoning." The planned
+ablations isolate this — A1 (templated vs self-distilled rationales), A2
+(single- vs multi-value reasoning), A3 (trained CoT vs prompt-only CoT).
+
 ## Honest interpretation (for the report)
 
 The **pipeline is faithful** (5 classifier reward models → 5 PPO+LoRA Moral
