@@ -46,6 +46,7 @@ def main():
     ap.add_argument("--cot", action="store_true",
                     help="CoT aggregator: reason-then-answer; parse final answer")
     ap.add_argument("--label", default="CMVA-GS", help="row name in the table")
+    ap.add_argument("--out", default="results/rouge.json", help="output json path")
     args = ap.parse_args()
 
     device = get_device()
@@ -102,7 +103,7 @@ def main():
         print("aggregator not found; skipping CMVA-GS row")
 
     os.makedirs("results", exist_ok=True)
-    json.dump(results, open("results/rouge.json", "w"), indent=2)
+    json.dump(results, open(args.out, "w"), indent=2)
     print("\n=== Figure 2: ROUGE on held-out SocialChem ===")
     print(f"{'System':10s} " + " ".join(f"{m:>10s}" for m in ['rouge1','rouge2','rougeL','rougeLsum']))
     for sys_name, r in results.items():
