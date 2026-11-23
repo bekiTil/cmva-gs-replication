@@ -1,20 +1,31 @@
 #!/usr/bin/env bash
-# One-shot 10K pipeline for Colab: rebuilds everything a fresh VM is missing,
-# caches the 10K agent candidates once, then trains + evals BOTH aggregators.
-#   1. baseline: plain CMVA-GS aggregator (10K x2)  -> must beat PT (paper's claim)
-#   2. treatment: CoT aggregator (10K x2) on the SAME cached candidates
-# Run from Colab with a single cell:
-#   !wget -q -O /content/run_10k.sh https://raw.githubusercontent.com/bekiTil/cmva-gs-replication/main/run_10k.sh && bash /content/run_10k.sh
+# Resumable 10K pipeline for Colab. Persists every expensive artifact to Google
+# Drive as it is produced and restores it on a fresh VM, so you can close the PC
+# and resume by re-running the same cell (which mounts Drive, then runs this).
+#
+#   Drive layout:  MyDrive/cmva_gs/{reward, agents, candidates, aggregator,
+#                                   aggregator_cot, rouge_plain10k.json, rouge_cot10k.json}
+#
+#   Steps: data -> reward -> agents -> 10K candidate cache (incremental)
+#          -> plain aggregator (baseline) -> eval vs PT
+#          -> CoT aggregator -> eval
 set -e
+
+DRIVE="${DRIVE_DIR:-/content/drive/MyDrive/cmva_gs}"
+mkdir -p "$DRIVE" "$DRIVE/candidates"
 
 cd /content
 pip -q install transformers==5.0.0 trl==0.11.4 peft==0.22.0 datasets accelerate evaluate rouge-score scikit-learn beautifulsoup4 sentencepiece
-
-if [ ! -d cmva-gs-replication ]; then
-  git clone -q https://github.com/bekiTil/cmva-gs-replication.git
-fi
+[ -d cmva-gs-replication ] || git clone -q https://github.com/bekiTil/cmva-gs-replication.git
 cd cmva-gs-replication
 git pull -q || true
+
+echo "===== [0/8] restore persisted artifacts from Drive ====="
+mkdir -p models data/prepared/candidates results
+[ -d "$DRIVE/reward" ]         && cp -ru "$DRIVE/reward"         models/reward         || true
+[ -d "$DRIVE/agents" ]         && cp -ru "$DRIVE/agents"         models/agents         || true
+[ -d "$DRIVE/aggregator" ]     && cp -ru "$DRIVE/aggregator"     models/aggregator     || true
+[ -d "$DRIVE/aggregator_cot" ] && cp -ru "$DRIVE/aggregator_cot" models/aggregator_cot || true
 
 echo "===== [1/8] data ====="
 if [ ! -f data/raw/social-chem-101/social-chem-101.v1.0.tsv ]; then
@@ -27,6 +38,7 @@ fi
 
 echo "===== [2/8] reward models ====="
 [ -f models/reward/loyalty/model.safetensors ] || python3 src/train_reward_models.py --max_train 12000 --epochs 2
+cp -ru models/reward "$DRIVE/reward"
 
 echo "===== [3/8] PPO moral agents ====="
 if [ ! -d models/agents/loyalty ]; then
@@ -34,22 +46,28 @@ if [ ! -d models/agents/loyalty ]; then
     python3 src/train_ppo_agent.py --value "$v" --steps 20 --n_prompts 1000
   done
 fi
+cp -ru models/agents "$DRIVE/agents"
 
-echo "===== [4/8] cache 10K candidates (once) ====="
-[ -f data/prepared/candidates/train10k.jsonl ] || \
-  python3 src/gen_candidates.py --n_train 10000 --out data/prepared/candidates/train10k.jsonl
+echo "===== [4/8] cache 10K candidates (incremental, straight onto Drive) ====="
+# Per-agent files land in $DRIVE/candidates, so partial progress survives a VM reset.
+python3 src/gen_candidates.py --n_train 10000 --out "$DRIVE/candidates/train10k.jsonl"
+CAND="$DRIVE/candidates/train10k.jsonl"
 
 echo "===== [5/8] train PLAIN aggregator (baseline, 10K x2) ====="
-python3 src/train_aggregator.py --candidates data/prepared/candidates/train10k.jsonl --n_train 10000 --epochs 2
+[ -f models/aggregator/adapter_model.safetensors ] || python3 src/train_aggregator.py --candidates "$CAND" --n_train 10000 --epochs 2
+cp -ru models/aggregator "$DRIVE/aggregator"
 
 echo "===== [6/8] eval PLAIN vs PT ====="
 python3 src/eval_rouge.py --n 150 --agg_dir models/aggregator --label CMVA-GS --out results/rouge_plain10k.json
+cp -f results/rouge_plain10k.json "$DRIVE/"
 
 echo "===== [7/8] train CoT aggregator (10K x2, same candidates) ====="
-python3 src/train_aggregator_cot.py --candidates data/prepared/candidates/train10k.jsonl --n_train 10000 --epochs 2
+[ -f models/aggregator_cot/adapter_model.safetensors ] || python3 src/train_aggregator_cot.py --candidates "$CAND" --n_train 10000 --epochs 2
+cp -ru models/aggregator_cot "$DRIVE/aggregator_cot"
 
 echo "===== [8/8] eval CoT vs PT ====="
 python3 src/eval_rouge.py --n 150 --cot --agg_dir models/aggregator_cot --label CoT-CA --out results/rouge_cot10k.json
+cp -f results/rouge_cot10k.json "$DRIVE/"
 
 echo "ALL DONE"
 echo "=== PLAIN (baseline) rouge_plain10k.json ==="; cat results/rouge_plain10k.json
