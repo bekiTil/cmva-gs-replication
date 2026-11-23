@@ -69,22 +69,37 @@ CMVA-GS rouge scores vs PT (16.83 / 3.09 / 13.36 / 13.36), same 120-item test:
 | 4000 examples × 1 ep     | 13.87 | 3.06 | 12.68 | none (underfit) |
 | 2000 examples × 5 ep     | 14.42 | 2.41 | 12.61 | none (**overfit**) |
 
-**Key finding: there is a training sweet spot (classic bias–variance curve).**
-- **Too little training** (4000×1, or 60 examples) → *under*-fits → ROUGE below PT.
-- **Too much training** (2000×5) → *over*-fits the 2000 train RoTs → generalizes
-  worse to the held-out test set → ROUGE drops below *both* the 2000×2 run and PT.
-- **Just right (2000 × 2 epochs)** → beats PT on 3 of 4 metrics, including ROUGE-L.
+**Final 10K run on an L4 GPU (fresh runtime, test n=150, vs its own PT baseline
+PT = 16.31 / 3.11 / 13.11 / 13.11):**
 
-So the lever is neither raw data size alone nor epochs alone, but the *balance*:
-the best scaled result is **2000 examples × 2 epochs**. ROUGE-1 is the hardest
-metric for an aggregation model and did not flip at this scale; the paper's full
-win used **91K** examples (far more data → more epochs possible without overfit).
+| System   | ROUGE-1 | ROUGE-2 | ROUGE-L | ROUGE-Lsum |
+|----------|--------:|--------:|--------:|-----------:|
+| PT-model | 16.31 | 3.11 | 13.11 | 13.11 |
+| CMVA-GS  | **16.83** | **5.06** | **15.44** | **15.44** |
+| (Δ)      | **+0.52** | **+1.95** | **+2.33** | **+2.33** |
+
+**10000 examples × 2 epochs → CMVA-GS beats PT on ALL 4 metrics, ROUGE-1 included.**
+
+**Key finding: there is a training sweet spot, and enough data unlocks a clean win.**
+- **Too little training** (4000×1, or 60 examples) → *under*-fits → ROUGE below PT.
+- **Too much training on too little data** (2000×5) → *over*-fits the 2000 train
+  RoTs → generalizes worse → ROUGE drops below both the 2000×2 run and PT.
+- **Just right (2000 × 2 epochs)** → beats PT on 3 of 4 metrics (ROUGE-1 trails).
+- **Enough data (10000 × 2 epochs)** → 2 full epochs *without* overfitting (loss
+  ~1.2) → **beats PT on all 4 metrics, flipping the stubborn ROUGE-1**. This is
+  what the paper's 91K-example scale buys, reproduced in miniature.
+
+So the lever is the data/epoch *balance*: more unique data lets you train longer
+without overfitting, and at 10K that is enough to beat the base model on every
+ROUGE metric — the same effect the paper gets at **91K** examples.
 
 ## Honest interpretation (for the report)
 
 The **pipeline is faithful** (5 classifier reward models → 5 PPO+LoRA Moral
-Agents → LoRA aggregator → Table 1 + ROUGE), but the **scaled-down results are
-weaker than the paper's**, for two understandable reasons:
+Agents → LoRA aggregator → Table 1 + ROUGE). On **Figure 2 (ROUGE)** the scaled
+system reproduces the paper's headline result — at 10K examples CMVA-GS beats the
+base model on all four metrics. On **Table 1 (conformance)** the result is more
+modest, for an understandable reason. Two notes:
 
 1. **Near-ceiling base (Table 1).** TinyLlama-Chat already gives bland
    pro-social answers, so the base scores ~92–94% conformance on every value —
@@ -93,12 +108,13 @@ weaker than the paper's**, for two understandable reasons:
    steps and rising KL, the agents move only a point or two, sometimes down.
 
 2. **Aggregator training (Figure 2).** The Contextual Aggregator has a training
-   *sweet spot*. Too little (4000×1 under-fits) or too much (2000×5 over-fits)
-   both lose to PT; **2000 examples × 2 epochs** is best and beats PT on 3 of 4
-   metrics (ROUGE-2/L/Lsum), trailing only on ROUGE-1. So the lever is the
-   data/epoch *balance*, not either alone. The paper's full win used **91K**
-   examples — far more data allows more training without overfitting, which is
-   what would be needed to also flip ROUGE-1.
+   *sweet spot*. Too little (4000×1 under-fits) or too much on too little data
+   (2000×5 over-fits) both lose to PT; **2000×2** beats PT on 3 of 4 metrics but
+   trails on ROUGE-1; and **10000 × 2 epochs beats PT on all 4 metrics, including
+   ROUGE-1** (16.83 vs 16.31). So the lever is the data/epoch *balance*: enough
+   unique data lets you run a full 2 epochs without overfitting. This reproduces
+   the paper's qualitative result (CMVA-GS > base model) in miniature; the paper
+   used **91K** examples on 8×A100, we used 10K on one L4.
 
 **Takeaways to scale up:** more PPO steps per agent, a less-aligned/larger base
 to create headroom, and a much larger aggregator training set. These are the
