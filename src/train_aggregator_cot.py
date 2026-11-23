@@ -37,6 +37,9 @@ def main():
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--profile", default="balanced")
     ap.add_argument("--out", default="models/aggregator_cot")
+    ap.add_argument("--candidates", default=None,
+                    help="cached candidates jsonl from gen_candidates.py; if set, "
+                         "skip agent generation and train from it")
     args = ap.parse_args()
 
     device = get_device()
@@ -45,26 +48,34 @@ def main():
         tok.pad_token = tok.eos_token
     profile = PROFILES[args.profile]
 
-    rows = [json.loads(l) for l in open("data/prepared/cot/train.jsonl")][: args.n_train]
-    print(f"Generating candidates from 5 agents for {len(rows)} situations ...")
-    agent_prompts = [build_prompt(r["situation"]) for r in rows]
-    cand_by_value = {}
-    for v in VALUES:
-        agent = load_agent(args.base_model, v, tok, device)
-        cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
-                                           max_new_tokens=28, bs=32)
-        del agent
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        print("  candidates done:", v)
-
     examples = []
-    for i, r in enumerate(rows):
-        cands = [cand_by_value[v][i] for v in VALUES]
-        inp = build_agg_input_cot(r["situation"], profile, cands)
-        tgt = r["reasoning"] + " Aggregated answer: " + r["target"]
-        examples.append({"text": inp + " " + tgt + tok.eos_token,
-                         "prompt_len_text": inp})
+    if args.candidates:
+        rows = [json.loads(l) for l in open(args.candidates)][: args.n_train]
+        print(f"Loaded {len(rows)} cached candidate rows from {args.candidates}")
+        for r in rows:
+            inp = build_agg_input_cot(r["situation"], profile, r["cands"])
+            tgt = r["reasoning"] + " Aggregated answer: " + r["target"]
+            examples.append({"text": inp + " " + tgt + tok.eos_token,
+                             "prompt_len_text": inp})
+    else:
+        rows = [json.loads(l) for l in open("data/prepared/cot/train.jsonl")][: args.n_train]
+        print(f"Generating candidates from 5 agents for {len(rows)} situations ...")
+        agent_prompts = [build_prompt(r["situation"]) for r in rows]
+        cand_by_value = {}
+        for v in VALUES:
+            agent = load_agent(args.base_model, v, tok, device)
+            cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
+                                               max_new_tokens=28, bs=32)
+            del agent
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print("  candidates done:", v)
+        for i, r in enumerate(rows):
+            cands = [cand_by_value[v][i] for v in VALUES]
+            inp = build_agg_input_cot(r["situation"], profile, cands)
+            tgt = r["reasoning"] + " Aggregated answer: " + r["target"]
+            examples.append({"text": inp + " " + tgt + tok.eos_token,
+                             "prompt_len_text": inp})
     os.makedirs("results", exist_ok=True)
     json.dump(examples[:3], open("results/cot_samples.json", "w"), indent=2)
 

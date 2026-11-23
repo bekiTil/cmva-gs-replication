@@ -55,6 +55,9 @@ def main():
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--profile", default="balanced")
     ap.add_argument("--out", default="models/aggregator")
+    ap.add_argument("--candidates", default=None,
+                    help="cached candidates jsonl from gen_candidates.py; if set, "
+                         "skip agent generation and train from it")
     args = ap.parse_args()
 
     device = get_device()
@@ -65,26 +68,34 @@ def main():
     from common import PROFILES
     profile = PROFILES[args.profile]
 
-    # --- Build aggregator dataset by running the 5 agents ---
-    pairs = [json.loads(l) for l in open("data/prepared/pairs/train.jsonl")][: args.n_train]
-    print(f"Generating candidate answers from 5 agents for {len(pairs)} situations ...")
-    # One agent in GPU memory at a time (5 full 1.1B models do not fit on a T4).
-    cand_by_value = {}
-    agent_prompts = [build_prompt(p["situation"]) for p in pairs]
-    for v in VALUES:
-        agent = load_agent(args.base_model, v, tok, device)
-        cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
-                                           max_new_tokens=28, bs=32)
-        del agent
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        print(f"  candidates done: {v}")
+    # --- Build aggregator dataset: cached candidates, or run the 5 agents ---
     examples = []
-    for i, p in enumerate(pairs):
-        cands = [cand_by_value[v][i] for v in VALUES]
-        inp = build_agg_input(p["situation"], profile, cands)
-        examples.append({"text": inp + " " + p["target"] + tok.eos_token,
-                         "prompt_len_text": inp})
+    if args.candidates:
+        rows = [json.loads(l) for l in open(args.candidates)][: args.n_train]
+        print(f"Loaded {len(rows)} cached candidate rows from {args.candidates}")
+        for r in rows:
+            inp = build_agg_input(r["situation"], profile, r["cands"])
+            examples.append({"text": inp + " " + r["target"] + tok.eos_token,
+                             "prompt_len_text": inp})
+    else:
+        pairs = [json.loads(l) for l in open("data/prepared/pairs/train.jsonl")][: args.n_train]
+        print(f"Generating candidate answers from 5 agents for {len(pairs)} situations ...")
+        # One agent in GPU memory at a time (5 full models do not all fit).
+        cand_by_value = {}
+        agent_prompts = [build_prompt(p["situation"]) for p in pairs]
+        for v in VALUES:
+            agent = load_agent(args.base_model, v, tok, device)
+            cand_by_value[v] = generate_batch(agent, tok, agent_prompts, device,
+                                               max_new_tokens=28, bs=32)
+            del agent
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print(f"  candidates done: {v}")
+        for i, p in enumerate(pairs):
+            cands = [cand_by_value[v][i] for v in VALUES]
+            inp = build_agg_input(p["situation"], profile, cands)
+            examples.append({"text": inp + " " + p["target"] + tok.eos_token,
+                             "prompt_len_text": inp})
     os.makedirs("results", exist_ok=True)
     json.dump(examples[:3], open("results/agg_samples.json", "w"), indent=2)
 
