@@ -36,7 +36,7 @@ def gen_text(model, tok, prompt, device, max_new_tokens=32):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base_model", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    ap.add_argument("--base_model", default="Qwen/Qwen2.5-1.5B-Instruct")
     ap.add_argument("--n", type=int, default=150)
     ap.add_argument("--profile", default="balanced")
     ap.add_argument("--gen_tokens", type=int, default=32,

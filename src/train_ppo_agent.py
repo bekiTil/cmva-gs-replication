@@ -37,7 +37,7 @@ def collator(data):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--value", required=True)
-    ap.add_argument("--base_model", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    ap.add_argument("--base_model", default="Qwen/Qwen2.5-1.5B-Instruct")
     ap.add_argument("--n_prompts", type=int, default=800)
     ap.add_argument("--steps", type=int, default=50, help="number of PPO batches")
     ap.add_argument("--batch_size", type=int, default=16)

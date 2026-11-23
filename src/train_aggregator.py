@@ -50,7 +50,7 @@ def build_agg_input(situation, profile, candidates):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base_model", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    ap.add_argument("--base_model", default="Qwen/Qwen2.5-1.5B-Instruct")
     ap.add_argument("--n_train", type=int, default=400)
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--profile", default="balanced")

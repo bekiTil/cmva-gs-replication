@@ -38,7 +38,7 @@ def generate_responses(model, tok, prompts, device, max_new_tokens=32, bs=16):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base_model", default="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+    ap.add_argument("--base_model", default="Qwen/Qwen2.5-1.5B-Instruct")
     ap.add_argument("--adapter", default=None, help="LoRA adapter dir (a Moral Agent)")
     ap.add_argument("--n_prompts", type=int, default=200)
     ap.add_argument("--label", required=True, help="row name, e.g. 'PT' or 'agent_care'")
