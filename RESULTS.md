@@ -125,6 +125,43 @@ the base), the *CoT* aggregator beats the base on **all four** metrics by a wide
 margin and beats the plain control on all four. Reasoning before answering is
 doing real work here, which is exactly the G13 hypothesis.
 
+**Scaled to 10K×2 (controlled; candidates cached once and shared).** Repeating the
+same controlled comparison at 10K training examples — both aggregators built from
+*one* shared, cached set of the 5 agents' candidates, so base, agents, situations,
+candidates and epochs are all identical and only the training target differs —
+sharpens the result. Test n=150.
+
+| System | ROUGE-1 | ROUGE-2 | ROUGE-L | ROUGE-Lsum |
+|--------|--------:|--------:|--------:|-----------:|
+| PT (base Qwen2.5-1.5B) | 15.18 | 3.18 | 13.60 | 13.60 |
+| CMVA-GS (plain, 10K×2) | 11.83 | 2.32 | 10.65 | 10.65 |
+| **CoT-CA (10K×2)** | **28.23** | **10.32** | **26.37** | **26.37** |
+| Δ CoT-CA vs PT | **+13.06** | **+7.14** | **+12.77** | **+12.77** |
+| Δ CoT-CA vs plain | **+16.40** | **+8.00** | **+15.72** | **+15.72** |
+
+**Two findings, and the second is the real story:**
+
+1. **The plain aggregator does *not* beat the strong base — and more data makes it
+   *worse*** (11.83 at 10K×2 vs 14.09 at 2000×2, both below PT's 15.18). This is
+   the opposite of the TinyLlama replication, where 10K examples flipped the plain
+   aggregator to a clean win. The cause is the base: Qwen2.5-1.5B-**Instruct** is
+   already a strong zero-shot rule-of-thumb generator, so the small LoRA aggregator
+   — trained 5× harder at 10K×2 (2500 steps vs 500) — over-conforms to the training
+   RoTs' style and *degrades* the base's answers. On a strong instruction-tuned
+   base the paper's plain pipeline does not reproduce "beat the base."
+
+2. **Chain-of-Thought rescues it decisively.** With the *same* everything, the CoT
+   aggregator scores **28.23 ROUGE-1 — ~1.9× the base and ~2.4× the plain
+   aggregator**, winning on all four metrics by +13 to +16 points. So on a strong
+   base, CoT is not an incremental add-on: it is *what makes contextual aggregation
+   work at all*. Reasoning about the consequences before committing to an answer
+   keeps the aggregator from collapsing into style-mimicry and lets it actually use
+   the five agents' candidates.
+
+This reframes the G13 contribution: not "CoT adds a little on top of a working
+baseline," but **"CoT is the ingredient that lets multi-agent moral aggregation
+beat a strong base model when plain SFT cannot."**
+
 *Caveats to probe in the ablations (COT_PLAN.md, Phase 3):* part of the gain may
 come from the CoT target's consistent format and the extra structure teaching the
 model a more RoT-like answer style, not purely from "reasoning." The planned
