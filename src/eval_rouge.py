@@ -97,7 +97,8 @@ def main():
                                           [cand_by_value[v][i] for v in VALUES])
                           for i, p in enumerate(pairs)]
             cmva_preds = generate_batch(agg, tok, agg_inputs, device,
-                                        max_new_tokens=args.gen_tokens, bs=32, do_sample=False)
+                                        max_new_tokens=args.gen_tokens, bs=32,
+                                        do_sample=False, max_len=320)
         results[args.label] = rouge_eval(cmva_preds, refs)
     else:
         print("aggregator not found; skipping CMVA-GS row")

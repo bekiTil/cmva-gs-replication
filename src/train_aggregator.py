@@ -108,8 +108,8 @@ def main():
     model.print_trainable_parameters()
 
     def tokenize(ex):
-        full = tok(ex["text"], truncation=True, max_length=256)
-        plen = len(tok(ex["prompt_len_text"], truncation=True, max_length=256)["input_ids"])
+        full = tok(ex["text"], truncation=True, max_length=320)
+        plen = len(tok(ex["prompt_len_text"], truncation=True, max_length=320)["input_ids"])
         labels = list(full["input_ids"])
         for j in range(min(plen, len(labels))):
             labels[j] = -100
