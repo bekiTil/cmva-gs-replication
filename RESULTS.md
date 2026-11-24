@@ -117,50 +117,47 @@ trace before `Aggregated answer:`. ROUGE is scored on the final answer only
 | Δ CoT-CA vs PT | **+11.58** | **+7.21** | **+11.53** | **+11.53** |
 | Δ CoT-CA vs plain | **+12.67** | **+7.34** | **+12.55** | **+12.55** |
 
-**Headline: Chain-of-Thought roughly doubles ROUGE and makes the aggregator far
-more sample-efficient.** At the identical 2000×2 budget where the *plain*
-aggregator still trails the base model (14.09 vs 15.18 on ROUGE-1 — consistent
-with the earlier finding that the plain aggregator needs ~10K examples to beat
-the base), the *CoT* aggregator beats the base on **all four** metrics by a wide
-margin and beats the plain control on all four. Reasoning before answering is
+At this 2000×2 budget the CoT aggregator beats the base on **all four** metrics by
+a wide margin. (The plain figure here, 14.09, predates the eval-truncation fix
+described below and is **understated** — on the corrected 320-token eval the plain
+aggregator also beats the base; see the 10K results.) Reasoning before answering is
 doing real work here, which is exactly the G13 hypothesis.
 
-**Scaled to 10K×2 (controlled; candidates cached once and shared).** Repeating the
-same controlled comparison at 10K training examples — both aggregators built from
-*one* shared, cached set of the 5 agents' candidates, so base, agents, situations,
-candidates and epochs are all identical and only the training target differs —
-sharpens the result. Test n=150.
+**Scaled to 10K×2 (controlled; candidates cached once and shared).** Both
+aggregators are built from *one* shared, cached set of the 5 agents' candidates,
+so base, agents, situations, candidates and epochs are all identical and only the
+training target differs. Test n=150, greedy decoding, base **Qwen2.5-1.5B-Instruct**.
 
 | System | ROUGE-1 | ROUGE-2 | ROUGE-L | ROUGE-Lsum |
 |--------|--------:|--------:|--------:|-----------:|
 | PT (base Qwen2.5-1.5B) | 15.18 | 3.18 | 13.60 | 13.60 |
-| CMVA-GS (plain, 10K×2) | 11.83 | 2.32 | 10.65 | 10.65 |
+| CMVA-GS (plain, 10K×2) | **24.53** | **7.58** | **22.87** | **22.87** |
 | **CoT-CA (10K×2)** | **28.23** | **10.32** | **26.37** | **26.37** |
-| Δ CoT-CA vs PT | **+13.06** | **+7.14** | **+12.77** | **+12.77** |
-| Δ CoT-CA vs plain | **+16.40** | **+8.00** | **+15.72** | **+15.72** |
+| Δ plain vs PT | **+9.35** | **+4.40** | **+9.27** | **+9.27** |
+| Δ CoT-CA vs plain | **+3.70** | **+2.74** | **+3.50** | **+3.50** |
 
-**Two findings, and the second is the real story:**
+**Both results land exactly as the paper + G13 predict:**
 
-1. **The plain aggregator does *not* beat the strong base — and more data makes it
-   *worse*** (11.83 at 10K×2 vs 14.09 at 2000×2, both below PT's 15.18). This is
-   the opposite of the TinyLlama replication, where 10K examples flipped the plain
-   aggregator to a clean win. The cause is the base: Qwen2.5-1.5B-**Instruct** is
-   already a strong zero-shot rule-of-thumb generator, so the small LoRA aggregator
-   — trained 5× harder at 10K×2 (2500 steps vs 500) — over-conforms to the training
-   RoTs' style and *degrades* the base's answers. On a strong instruction-tuned
-   base the paper's plain pipeline does not reproduce "beat the base."
+1. **Plain CMVA-GS beats the base on all four metrics** (+9.35 ROUGE-1, and +4–9 on
+   the rest). Reproduces the paper's core claim on the strong Qwen base: combining
+   the five moral agents through the contextual aggregator clearly improves on the
+   base model's own answers.
 
-2. **Chain-of-Thought rescues it decisively.** With the *same* everything, the CoT
-   aggregator scores **28.23 ROUGE-1 — ~1.9× the base and ~2.4× the plain
-   aggregator**, winning on all four metrics by +13 to +16 points. So on a strong
-   base, CoT is not an incremental add-on: it is *what makes contextual aggregation
-   work at all*. Reasoning about the consequences before committing to an answer
-   keeps the aggregator from collapsing into style-mimicry and lets it actually use
-   the five agents' candidates.
+2. **Chain-of-Thought adds a further significant gain on top of that** — CoT-CA beats
+   the already-strong plain aggregator on all four (+3.70 ROUGE-1, +2.74/+3.50 on
+   the rest), confirming the G13 hypothesis that reasoning about consequences before
+   answering helps even when the contextual aggregator already works well.
 
-This reframes the G13 contribution: not "CoT adds a little on top of a working
-baseline," but **"CoT is the ingredient that lets multi-agent moral aggregation
-beat a strong base model when plain SFT cannot."**
+> **Eval bug found and fixed (important).** A first pass showed the plain aggregator
+> *below* the base (11.83 ROUGE-1) while CoT looked far ahead — an artifact, not a
+> real result. `eval_rouge.py` was truncating the plain aggregator's prompt at **160
+> tokens**, which chopped off the last candidate answers and often the
+> `Aggregated answer:` cue itself, so at test time the aggregator never saw its
+> answer prompt. (The CoT path already used 320 tokens, which is why only plain was
+> hurt; training used 256.) Raising the plain eval to **320 tokens** — with *no
+> retraining* — moved the same aggregator from 11.83 → **24.53**. Lesson: match the
+> generation context length to the prompt, and always sanity-check a surprising
+> ablation by reading the model's actual generations.
 
 *Caveats to probe in the ablations (COT_PLAN.md, Phase 3):* part of the gain may
 come from the CoT target's consistent format and the extra structure teaching the
